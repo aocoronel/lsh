@@ -1,0 +1,7 @@
+* lsh
+
+This is currently an experimental project, which aims to provide a extremely small shell, that can be extended with system programming languages, and uses custom Lisp syntax as the scripting language.
+
+** License
+
+TBD
