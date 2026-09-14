@@ -158,7 +158,6 @@ parse_expr :: proc(psr: ^Parser) -> ^Element {
 		} else {
 			append(&var.list.cdr, cdr^)
 		}
-		return var
 	}
 
 	return nil
@@ -218,7 +217,7 @@ parse_operator :: proc(psr: ^Parser) -> ^Element {
 	return var
 }
 
-parse_any :: proc(psr: ^Parser) -> ^Element {
+parse_any :: proc(psr: ^Parser, loc := #caller_location) -> ^Element {
 	#partial switch psr.token.kind {
 	case .EOF:
 		return nil
@@ -237,7 +236,13 @@ parse_any :: proc(psr: ^Parser) -> ^Element {
 	case .B_Operator_Begin ..< .B_Comparison_End:
 		return parse_operator(psr)
 	case:
-		perrorf(psr.token.pos, "parse_any() isn't responsible for parsing %q", psr.token.kind)
+		perrorf(
+			psr.token.pos,
+			"parse_any() isn't responsible for parsing %q. %s:%d",
+			psr.token.kind,
+			loc.file_path,
+			loc.line,
+		)
 		panic("unreachable")
 	}
 }
