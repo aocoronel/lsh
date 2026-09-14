@@ -1,0 +1,104 @@
+* Notes
+
+This contains some interesting knowledge I got by writing this project. As soon as I have a decent shell, I'm gonna squash all commits and remove this file, which will become a blog post at [[https://aocoronel.github.io][my blog]].
+
+** Logging
+
+Odin logger is not just cross-platform, but also very customizable. Because I like the convention ~error: your program has a problem~ style, but Odin doesn't provide a logger like this by default, there are tweaks that lets it be just like that:
+
+#+BEGIN_SRC odin
+  log.Level_Headers = {
+      0 ..< 10 = "debug: ",
+      10 ..< 20 = "info: ",
+      20 ..< 30 = "warn: ",
+      30 ..< 40 = "error: ",
+      40 ..< 50 = "fatal: ",
+  }
+  context.logger = log.create_console_logger(opt = {.Level, .Terminal_Color})
+  defer log.destroy_console_logger(context.logger)
+
+  log.error("your program has a problem")
+#+END_SRC
+
+** Backtraces
+
+I happened quite a couple of times my program would segfault, and tell nothing about what happened, and then I would have to debug the C old style, until I found the cause. After digging a little bit, I found ~core:debug/trace~ which implements a backtrace, but must be enabled manually.
+
+So here is my backtrace implementation that catches the most important signals:
+
+#+BEGIN_SRC odin
+  register_back_trace :: proc() {
+      Signals :: enum {
+  		SIGABRT = 6,
+  		SIGFPE  = 8,
+  		SIGILL  = 4,
+  		SIGINT  = 2,
+  		SIGSEGV = 11,
+  		SIGTERM = 15,
+  	}
+
+  	SKIP :: 2
+
+  	libc.signal(
+  		libc.SIGSEGV,
+  		proc "cdecl" (signal: c.int) {
+  			context = runtime.default_context()
+  			capture := trace.capture(SKIP) // 2 skip the signal handler stack trace
+  			locations, err := trace.resolve(capture)
+  			if err != nil {
+  				fmt.eprintfln("trace error: %v", err)
+  				os.exit(1)
+  			}
+  			location := locations[0]
+  			runtime.print_string(location.file_path)
+
+  			if location.line > 0 {
+  				when ODIN_ERROR_POS_STYLE == .Default {
+  					runtime.print_string("(")
+  					runtime.print_i64(i64(location.line))
+  					if location.column > 0 {
+  						runtime.print_string(":")
+  						runtime.print_i64(i64(location.column))
+  					}
+  					runtime.print_string(")")
+  				} else when ODIN_ERROR_POS_STYLE == .Unix {
+  					runtime.print_string(":")
+  					runtime.print_i64(i64(location.line))
+  					if location.column > 0 {
+  						runtime.print_string(":")
+  						runtime.print_i64(i64(location.column))
+  					}
+  				} else {
+  					#panic("unhandled ODIN_ERROR_POS_STYLE")
+  				}
+  			}
+  			runtime.print_string(": ")
+  			fmt.eprintfln("caught signal %q", cast(Signals)signal)
+
+  			if len(locations) == trace.BACKTRACE_SIZE - SKIP {
+  				fmt.eprintln("For a larger backtrace, please set '-define:ODIN_TRACE_SIZE'")
+  			}
+
+  			trace.print(locations)
+  			trace.locations_destroy(locations)
+  			os.exit(1)
+  		},
+  	)
+  }
+
+  main :: proc() {
+  	register_back_trace()
+  }
+#+END_SRC
+
+The output contains the backtrace, tell what signal has been caught, and does play nice with my text editor, letting me quickly navigate to where the segmentation fault happened. No more hide 'n seek.
+
+#+BEGIN_SRC
+/home/aoc/lsh/symbols.odin(284): caught signal "SIGSEGV"
+	#0 main::execute at /home/aoc/lsh/symbols.odin(284)
+	#1 main::main at /home/aoc/lsh/main.odin(330)
+	#2 main at /usr/lib/odin/base/runtime/entry_unix.odin(60)
+	#3 __libc_start_call_main at ./csu/../sysdeps/nptl/libc_start_call_main.h(74)
+	#4 __libc_start_main+0x85 at /usr/lib/libc.so.6
+	#5 _start at /builddir/glibc-2.41/csu/../sysdeps/x86_64/start.S(117)
+#+END_SRC
