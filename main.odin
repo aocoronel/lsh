@@ -236,18 +236,6 @@ main :: proc() {
 	strings.builder_init(&sb, context.allocator)
 	defer strings.builder_destroy(&sb)
 
-	odin_source_code_location_to_tokenizer_pos :: proc(
-		loc: runtime.Source_Code_Location,
-	) -> tokenizer.Pos {
-		return tokenizer.Pos {
-			file = loc.file_path,
-			line = cast(int)loc.line,
-			column = cast(int)loc.column,
-		}
-	}
-
-	odin_pos :: odin_source_code_location_to_tokenizer_pos
-
 	global_function_table = {
 		"defun" = defun,
 		"shell" = shell,
@@ -258,10 +246,10 @@ main :: proc() {
 		"$"     = {},
 		"^"     = {},
 		"?"     = {},
-		"+"     = {plus_proc, &Digit_Variadic, 1, {}},
-		"-"     = {sub_proc, &Digit_Variadic, 1, {}},
-		"*"     = {mul_proc, &Digit_Variadic, 1, {}},
-		"/"     = {quo_proc, &Digit_Variadic, 1, {}},
+		"+"     = plus,
+		"-"     = sub,
+		"*"     = mul,
+		"/"     = quo,
 		"%"     = {},
 		"%%"    = {},
 		"&"     = {},
@@ -320,14 +308,15 @@ main :: proc() {
 			return
 		}
 
-		v := parse(&config, string(contents[:]))
+		v := parse(&config, string(contents[:]), interactive = false)
 
 		for &e in v {
 			print_element(&e)
 
 			instruction, ok := build(&e)
+			if !ok do continue
 
-			result := execute(instruction)
+			result := eval(instruction)
 
 			print_element(result)
 		}
@@ -349,14 +338,15 @@ main :: proc() {
 		// All lines contains '\n'
 		line := string(sb.buf[:len(sb.buf) - 1])
 
-		v := parse(&config, line)
+		v := parse(&config, line, interactive = true)
 
 		for &e in v {
 			print_element(&e)
 
 			instruction, ok := build(&e)
+			if !ok do continue
 
-			result := execute(instruction)
+			result := eval(instruction)
 
 			print_element(result)
 		}

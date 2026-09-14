@@ -25,6 +25,7 @@ Element :: struct {
 
 Element_Union :: struct #raw_union {
 	list:     List,
+	boolean:  bool,
 	text:     cstring,
 	integer:  c.long,
 	float:    c.double,
@@ -36,6 +37,7 @@ Element_Union :: struct #raw_union {
 Element_Type :: enum u32 {
 	B_Literal_Begin,
   	List,    // ()
+    Bool,    // t or nil
   	String,  // "main"
   	Ident,   // main
   	Quote,   // 'main TODO: have to hack the tokenizer for this
@@ -48,7 +50,7 @@ Element_Type :: enum u32 {
     Function,
     Operator,
   B_Symbol_End,
-    
+
   B_Parameter_Begin,
 	  Any,
 	  Digit,
@@ -67,9 +69,10 @@ Code :: struct {
 	args: [dynamic]^Element,
 }
 
-new_element :: proc(allocator := context.temp_allocator) -> ^Element {
+new_element :: proc(type: Element_Type, allocator := context.temp_allocator) -> ^Element {
 	var := new(Element, allocator)
 	var.u = new(Element_Union, allocator)
+	var.type = type
 	return var
 }
 
@@ -91,6 +94,8 @@ print_element :: proc(var: ^Element, n: int = 0) {
 	#partial switch var.type {
 	case .String, .Ident, .Quote:
 		fmt.println(var.text)
+	case .Bool:
+		fmt.println(var.boolean ? "t" : "nil")
 	case .Float:
 		fmt.println(var.float)
 	case .Integer:
@@ -124,27 +129,26 @@ perrorf :: proc(pos: tokenizer.Pos, fmt_str: string, args: ..any, location := #c
 	)
 }
 
-parse_expr :: proc(psr: ^Parser) -> ^Element {
+parse_expr :: proc(psr: ^Parser) -> (var: ^Element) {
+	var = new_element(.List) // allocation freed at end of loop in main()
+
 	psr.token = tokenizer.scan(psr.tok)
 	if psr.token.kind == .Close_Paren {
-		return nil
+		return
 	}
 
 	car := parse_any(psr)
-	if car == nil do return nil
+	if car == nil do return
 
-	// allocation freed at end of loop in main()
-	var := new_element()
-	var.type = .List
 	var.list.car = car
-	// var.list.cdr already nil
 
 	for {
 		psr.token = tokenizer.scan(psr.tok)
 		#partial switch psr.token.kind {
 		case .Close_Paren:
-			return var
+			return
 		case .Period:
+			// (car . cdr)
 			psr.token = tokenizer.scan(psr.tok)
 			cdr := parse_any(psr)
 			if cdr == nil {
@@ -153,16 +157,16 @@ parse_expr :: proc(psr: ^Parser) -> ^Element {
 			}
 			append(&var.list.cdr, cdr^)
 			psr.token = tokenizer.scan(psr.tok)
-			if psr.token.kind == .Close_Paren {
-				return var
-			} else {
+			if psr.token.kind != .Close_Paren {
 				perrorf(psr.token.pos, "expected ')'")
 				return nil
 			}
+			return
 		}
 		cdr := parse_any(psr)
 		if cdr == nil {
-			append(&var.list.cdr, Element{})
+			boolean := new_element(.Bool)
+			append(&var.list.cdr, boolean^)
 		} else {
 			append(&var.list.cdr, cdr^)
 		}
@@ -172,8 +176,7 @@ parse_expr :: proc(psr: ^Parser) -> ^Element {
 }
 
 parse_ident :: proc(psr: ^Parser) -> ^Element {
-	var := new_element()
-	var.type = .Ident
+	var := new_element(.Ident)
 	var.text = strings.clone_to_cstring(psr.token.text, context.temp_allocator)
 	var.pos = psr.token.pos
 	return var
@@ -182,8 +185,7 @@ parse_ident :: proc(psr: ^Parser) -> ^Element {
 parse_quote :: proc(psr: ^Parser) -> ^Element {
 	token := psr.token.text
 	if len(token) == 2 do return nil // ""
-	var := new_element()
-	var.type = .Quote
+	var := new_element(.Quote)
 	var.text = strings.clone_to_cstring(token[1:len(token) - 1], context.temp_allocator)
 	var.pos = psr.token.pos
 	return var
@@ -192,16 +194,14 @@ parse_quote :: proc(psr: ^Parser) -> ^Element {
 parse_string :: proc(psr: ^Parser) -> ^Element {
 	token := psr.token.text
 	if len(token) == 2 do return nil // ""
-	var := new_element()
-	var.type = .String
+	var := new_element(.String)
 	var.text = strings.clone_to_cstring(token[1:len(token) - 1], context.temp_allocator)
 	var.pos = psr.token.pos
 	return var
 }
 
 parse_float :: proc(psr: ^Parser) -> ^Element {
-	var := new_element()
-	var.type = .Float
+	var := new_element(.Float)
 	i, _ := strconv.parse_f64(psr.token.text)
 	var.float = cast(c.double)i
 	var.pos = psr.token.pos
@@ -209,8 +209,7 @@ parse_float :: proc(psr: ^Parser) -> ^Element {
 }
 
 parse_int :: proc(psr: ^Parser) -> ^Element {
-	var := new_element()
-	var.type = .Integer
+	var := new_element(.Integer)
 	i, _ := strconv.parse_int(psr.token.text)
 	var.integer = cast(c.long)i
 	var.pos = psr.token.pos
@@ -218,8 +217,7 @@ parse_int :: proc(psr: ^Parser) -> ^Element {
 }
 
 parse_operator :: proc(psr: ^Parser) -> ^Element {
-	var := new_element()
-	var.type = .Operator
+	var := new_element(.Operator)
 	var.operator = cast(c.uint32_t)psr.token.kind
 	var.pos = psr.token.pos
 	return var
@@ -257,8 +255,7 @@ parse_any :: proc(psr: ^Parser, loc := #caller_location) -> ^Element {
 
 transmute_list :: proc(e: [dynamic]Element) -> (result: [dynamic]Element) {
 	if e == nil do return nil
-	var := new_element()
-	var.type = .List
+	var := new_element(.List)
 	var.list.car = &e[0]
 	for i in 1 ..< len(e) {
 		append(&var.list.cdr, e[i])
@@ -267,7 +264,7 @@ transmute_list :: proc(e: [dynamic]Element) -> (result: [dynamic]Element) {
 	return
 }
 
-parse :: proc(config: ^Config, line: string) -> (result: [dynamic]Element) {
+parse :: proc(config: ^Config, line: string, interactive: bool) -> (result: [dynamic]Element) {
 	tok: tokenizer.Tokenizer
 	tokenizer.init(&tok, line, "")
 	psr := Parser {
@@ -277,6 +274,7 @@ parse :: proc(config: ^Config, line: string) -> (result: [dynamic]Element) {
 		psr.token = tokenizer.scan(&tok)
 		element := parse_any(&psr)
 		if element == nil {
+			if !interactive do return
 			if result != nil {
 				// if first element is identifier, treat the line like POSIX shell
 				if result[0].type != .Ident do return
@@ -287,4 +285,3 @@ parse :: proc(config: ^Config, line: string) -> (result: [dynamic]Element) {
 		append(&result, element^)
 	}
 }
-
