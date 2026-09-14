@@ -29,6 +29,7 @@ Element_Union :: struct #raw_union {
 	integer:  c.long,
 	float:    c.double,
 	operator: c.uint32_t,
+	code:     Code,
 }
 
 // odinfmt: disable
@@ -40,6 +41,7 @@ Element_Type :: enum u32 {
   	Quote,   // 'main TODO: have to hack the tokenizer for this
   	Integer, // 69
   	Float,   // 1042.69
+    Code,
 	B_Literal_End,
 
   B_Symbol_Begin,
@@ -57,6 +59,12 @@ Element_Type :: enum u32 {
 List :: struct {
 	car: ^Element,
 	cdr: [dynamic]Element,
+}
+
+Code :: struct {
+	next: ^Code,
+	fn:   Callback_Proc,
+	args: [dynamic]^Element,
 }
 
 new_element :: proc(allocator := context.temp_allocator) -> ^Element {

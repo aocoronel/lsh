@@ -13,17 +13,6 @@ import "tokenizer"
 Pipe :: pipe.Pipe
 sh :: pipe.run_command
 
-Instruction_Arg :: union {
-	^Element,
-	^Instruction,
-}
-
-Instruction :: struct {
-	next: ^Instruction,
-	fn:   Callback_Proc,
-	args: [dynamic]Instruction_Arg,
-}
-
 Function_Type :: enum {
 	Callback,
 }
@@ -108,10 +97,10 @@ shell_proc :: proc(nargs: c.int, args: [^]Element) -> ^Element {
 	return nil
 }
 
-vaargs_gen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Instruction, ok: bool) {
-	inst = new(Instruction)
+vaargs_gen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Code, ok: bool) {
+	inst = new(Code)
 	inst.fn = fn.fn
-	inst.args = make([dynamic]Instruction_Arg, len(var))
+	inst.args = make([dynamic]^Element, len(var))
 	arg := fn.parameter[0]
 	for i in 0 ..< len(var) {
 		bind_arg(inst, var, &arg, i) or_return
@@ -130,7 +119,7 @@ get_symbol :: proc(var: ^Element) -> (Function, bool) {
 	}
 }
 
-codegen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Instruction, ok: bool) {
+codegen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Code, ok: bool) {
 	if fn.nargs == 1 && .Variadic in fn.parameter[0].specialization {
 		return vaargs_gen(var, fn)
 	}
@@ -140,9 +129,9 @@ codegen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Instruction, ok:
 		return nil, false
 	}
 
-	inst = new(Instruction)
+	inst = new(Code)
 	inst.fn = fn.fn
-	inst.args = make([dynamic]Instruction_Arg, fn.nargs)
+	inst.args = make([dynamic]^Element, fn.nargs)
 
 	for &arg, i in mem.slice_ptr(fn.parameter, cast(int)fn.nargs) {
 		bind_arg(inst, var, &arg, i) or_return
@@ -151,7 +140,7 @@ codegen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Instruction, ok:
 	return inst, true
 }
 
-bind_arg :: proc(inst: ^Instruction, var: [dynamic]Element, arg: ^Args, i: int) -> bool {
+bind_arg :: proc(inst: ^Code, var: [dynamic]Element, arg: ^Args, i: int) -> bool {
 	value := var[i]
 	#partial switch value.type {
 	case .List:
@@ -161,7 +150,8 @@ bind_arg :: proc(inst: ^Instruction, var: [dynamic]Element, arg: ^Args, i: int) 
 		nested_fn := get_symbol(car) or_return
 		nested := codegen(cdr, nested_fn) or_return
 
-		inst.args[i] = nested
+		inst.args[i].type = .Code
+		inst.args[i].code = nested^
 	case:
 		if arg.type == .Digit && value.type == .Float || value.type == .Integer {
 			inst.args[i] = &var[i]
@@ -176,11 +166,11 @@ bind_arg :: proc(inst: ^Instruction, var: [dynamic]Element, arg: ^Args, i: int) 
 	return true
 }
 
-build :: proc(var: ^Element) -> (^Instruction, bool) {
+build :: proc(var: ^Element) -> (^Code, bool) {
 	#partial switch var.type {
 	case .String, .Float, .Quote, .Integer, .Operator, .Ident:
-		inst := new(Instruction, context.temp_allocator)
-		inst.args = make([dynamic]Instruction_Arg, 1, context.temp_allocator)
+		inst := new(Code, context.temp_allocator)
+		inst.args = make([dynamic]^Element, 1, context.temp_allocator)
 		inst.args[0] = var
 		return inst, true
 	case .List:
@@ -212,14 +202,14 @@ build :: proc(var: ^Element) -> (^Instruction, bool) {
 	return nil, false
 }
 
-execute :: proc(inst: ^Instruction) -> ^Element {
+execute :: proc(inst: ^Code) -> ^Element {
 	if inst == nil do return nil
 	if inst.fn == nil {
 		if inst.args != nil {
-			switch a in inst.args[0] {
-			case ^Element:
-				return a
-			case ^Instruction:
+			#partial switch inst.args[0].type {
+			case:
+				return inst.args[0]
+			case .Code:
 				return nil
 			}
 		}
@@ -229,12 +219,12 @@ execute :: proc(inst: ^Instruction) -> ^Element {
 	args := make([dynamic]Element)
 
 	for arg in inst.args {
-		switch v in arg {
-		case ^Element:
-			append(&args, v^)
+		#partial switch arg.type {
+		case:
+			append(&args, arg^)
 
-		case ^Instruction:
-			result := execute(v)
+		case .Code:
+			result := execute(&arg.code)
 			append(&args, result^)
 		}
 	}
