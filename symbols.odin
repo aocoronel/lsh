@@ -61,8 +61,7 @@ Plugin :: struct {
 Callback_Proc :: #type proc(nargs: c.int, args: [^]Element) -> ^Element
 Lsh_Plugin_Proc :: #type proc() -> Plugin
 
-functions: map[string]Function
-operators: map[tokenizer.Token_Kind]Function
+global_function_table: map[string]Function
 
 Digit_Variadic := Args{.Digit, {.Variadic}}
 Any_Variadic := Args{.Any, {.Variadic}}
@@ -121,11 +120,12 @@ vaargs_gen :: proc(var: [dynamic]Element, fn: Function) -> (inst: ^Instruction, 
 }
 
 get_symbol :: proc(var: ^Element) -> (Function, bool) {
-	if var.type == .Ident {
-		return functions[string(var.text)]
-	} else if var.type == .Operator {
-		return operators[cast(tokenizer.Token_Kind)var.operator]
-	} else {
+	#partial switch var.type {
+	case .Ident:
+		return global_function_table[string(var.text)]
+	case .Operator:
+		return global_function_table[tokenizer.tokens[cast(tokenizer.Token_Kind)var.operator]]
+	case:
 		return Function{}, false
 	}
 }
@@ -188,9 +188,9 @@ build :: proc(var: ^Element) -> (^Instruction, bool) {
 		cdr := var.list.cdr
 		#partial switch car.type {
 		case .Ident:
-			fn, ok := functions[string(car.text)]
+			fn, ok := global_function_table[string(car.text)]
 			if !ok {
-				fn, ok = functions[string("shell")]
+				fn, ok = global_function_table[string("shell")]
 				if !ok do return nil, false
 				inst, ok := codegen(cdr, fn)
 				if !ok do return nil, false
@@ -199,7 +199,8 @@ build :: proc(var: ^Element) -> (^Instruction, bool) {
 			}
 			return codegen(cdr, fn)
 		case .Operator:
-			fn, ok := operators[cast(tokenizer.Token_Kind)car.operator]
+			fn, ok :=
+				global_function_table[tokenizer.tokens[cast(tokenizer.Token_Kind)car.operator]]
 			if ok {
 				return codegen(cdr, fn)
 			}

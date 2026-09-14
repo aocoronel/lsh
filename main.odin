@@ -129,11 +129,6 @@ main :: proc() {
 	strings.builder_init(&sb, context.allocator)
 	defer strings.builder_destroy(&sb)
 
-	functions = {
-		"defun" = defun,
-		"shell" = shell,
-	}
-
 	odin_source_code_location_to_tokenizer_pos :: proc(
 		loc: runtime.Source_Code_Location,
 	) -> tokenizer.Pos {
@@ -146,53 +141,55 @@ main :: proc() {
 
 	odin_pos :: odin_source_code_location_to_tokenizer_pos
 
-	operators = map[tokenizer.Token_Kind]Function {
-		.Eq          = {}, // =
-		.Not         = {}, // !
-		.Hash        = {}, // #
-		.At          = {}, // @
-		.Dollar      = {}, // $
-		.Pointer     = {}, // ^
-		.Question    = {}, // ?
-		.Add         = {plus_proc, &Digit_Variadic, 1, {}}, // +
-		.Sub         = {sub_proc, &Digit_Variadic, 1, {}}, // -
-		.Mul         = {mul_proc, &Digit_Variadic, 1, {}}, // *
-		.Quo         = {quo_proc, &Digit_Variadic, 1, {}}, // /
-		.Mod         = {}, // %
-		.Mod_Mod     = {}, // %%
-		.And         = {}, // &
-		.Or          = {}, // |
-		.Xor         = {}, // ~
-		.And_Not     = {}, // &~
-		.Shl         = {}, // <<
-		.Shr         = {}, // >>
-		.Cmp_And     = {}, // &&
-		.Cmp_Or      = {}, // ||
-		.Mul_Mul     = {}, // **
-		.Add_Eq      = {}, // +=
-		.Sub_Eq      = {}, // -=
-		.Mul_Eq      = {}, // *=
-		.Quo_Eq      = {}, // /=
-		.Mod_Eq      = {}, // %=
-		.Mod_Mod_Eq  = {}, // %%=
-		.And_Eq      = {}, // &=
-		.Or_Eq       = {}, // |=
-		.Xor_Eq      = {}, // ~=
-		.And_Not_Eq  = {}, // &~=
-		.Shl_Eq      = {}, // <<=
-		.Shr_Eq      = {}, // >>=
-		.Cmp_And_Eq  = {}, // &&=
-		.Cmp_Or_Eq   = {}, // ||=
-		.Increment   = {}, // ++
-		.Decrement   = {}, // --
-		.Arrow_Right = {}, // ->
-		.Undef       = {}, // ---
-		.Cmp_Eq      = {}, // ==
-		.Not_Eq      = {}, // !=
-		.Lt          = {}, // <
-		.Gt          = {}, // >
-		.Lt_Eq       = {}, // <=
-		.Gt_Eq       = {}, // >=
+	global_function_table = {
+		"defun" = defun,
+		"shell" = shell,
+		"="     = {},
+		"!"     = {},
+		"#"     = {},
+		"@"     = {},
+		"$"     = {},
+		"^"     = {},
+		"?"     = {},
+		"+"     = {plus_proc, &Digit_Variadic, 1, {}},
+		"-"     = {sub_proc, &Digit_Variadic, 1, {}},
+		"*"     = {mul_proc, &Digit_Variadic, 1, {}},
+		"/"     = {quo_proc, &Digit_Variadic, 1, {}},
+		"%  "   = {},
+		"%% "   = {},
+		"&  "   = {},
+		"|  "   = {},
+		"~  "   = {},
+		"&~ "   = {},
+		"<< "   = {},
+		">> "   = {},
+		"&& "   = {},
+		"|| "   = {},
+		"** "   = {},
+		"+= "   = {},
+		"-= "   = {},
+		"*= "   = {},
+		"/= "   = {},
+		"%= "   = {},
+		"%%="   = {},
+		"&= "   = {},
+		"|= "   = {},
+		"~= "   = {},
+		"&~="   = {},
+		"<<="   = {},
+		">>="   = {},
+		"&&="   = {},
+		"||="   = {},
+		"++ "   = {},
+		"-- "   = {},
+		"-> "   = {},
+		"---"   = {},
+		"== "   = {},
+		"!= "   = {},
+		"<  "   = {},
+		">  "   = {},
+		"<= "   = {},
+		">= "   = {},
 		// .Open_Paren    = {}, // (
 		// .Close_Paren   = {}, // )
 		// .Open_Bracket  = {}, // [
